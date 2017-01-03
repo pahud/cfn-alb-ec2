@@ -58,10 +58,11 @@ Resources:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       GroupId: !Ref SgEC2
+      SourceSecurityGroupId: !Ref SgLB
       IpProtocol: tcp
-      FromPort: 0
-      ToPort: 65535
-      CidrIp: 10.0.0.0/16
+      FromPort: 80
+      ToPort: 80
+      #CidrIp: 10.0.0.0/16
 
   ALBListener:
     Type : AWS::ElasticLoadBalancingV2::Listener
