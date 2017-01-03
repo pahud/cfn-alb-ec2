@@ -1,0 +1,279 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  generic cloudformation template
+
+Mappings:
+  VpcCidrs:
+      default:
+        vpc: 10.0.0.0/16
+        pubzonea: 10.0.1.0/24
+        pubzoneb: 10.0.2.0/24
+        ec2zonea: 10.0.11.0/24
+        ec2zoneb: 10.0.12.0/24
+
+Parameters:
+  KeyName:
+    Type: String
+    Description: Optional - Name of an existing EC2 KeyPair to enable SSH access to the ECS instances
+    Default: default
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      Tags: 
+        -
+          Key: Name
+          Value: cfn-vpc
+      CidrBlock: !FindInMap [ VpcCidrs, default, vpc ]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  VPCGWAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    #Properties:
+
+  PublicRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        -
+          Key: Name
+          Value: public-rt
+      VpcId: !Ref Vpc
+
+  PublicRouteViaIgw:
+    Type: AWS::EC2::Route
+    Properties: 
+      RouteTableId: !Ref PublicRT
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+
+  PrivateRTZoneA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        -
+          Key: Name
+          Value: private-rt-zone-A
+      VpcId: !Ref Vpc
+      
+  RouteViaNATGWZoneA:
+    Type: AWS::EC2::Route
+    Properties: 
+      RouteTableId: !Ref PrivateRTZoneA
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref PrivateRTZoneA
+
+  PrivateRTZoneB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        -
+          Key: Name
+          Value: private-rt-zone-B
+      VpcId: !Ref Vpc
+      
+  RouteViaNATGWZoneB:
+    Type: AWS::EC2::Route
+    Properties: 
+      RouteTableId: !Ref PrivateRTZoneB
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref PrivateRTZoneB
+
+
+  PublicZoneA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      Tags:
+        -
+          Key: Name
+          Value: pub-zone-a
+      VpcId: !Ref Vpc
+      CidrBlock: !FindInMap [ VpcCidrs, default, pubzonea ]
+      AvailabilityZone: 
+        Fn::Select:
+          - 0 
+          - Fn::GetAZs: ""
+
+  PublicZoneB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      Tags:
+        -
+          Key: Name
+          Value: pub-zone-b
+      VpcId: !Ref Vpc
+      CidrBlock: !FindInMap [ VpcCidrs, default, pubzoneb ]
+      AvailabilityZone: 
+        Fn::Select:
+          - 1 
+          - Fn::GetAZs: ""
+
+  EC2ZoneA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      Tags:
+        -
+          Key: Name
+          Value: ec2-zone-a
+      VpcId: !Ref Vpc
+      CidrBlock: !FindInMap [ VpcCidrs, default, ec2zonea ]
+      AvailabilityZone: 
+        Fn::Select:
+          - 0 
+          - Fn::GetAZs: ""
+
+  EC2ZoneB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      Tags:
+        -
+          Key: Name
+          Value: ec2-zone-b
+      VpcId: !Ref Vpc
+      CidrBlock: !FindInMap [ VpcCidrs, default, ec2zoneb ]
+      AvailabilityZone: 
+        Fn::Select:
+          - 1 
+          - Fn::GetAZs: ""
+
+
+
+  NATGWZoneA:
+    DependsOn: VPCGWAttach
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIPZoneA
+        - AllocationId
+      SubnetId:
+        Ref: PublicZoneA
+  EIPZoneA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  RouteViaNATGWZoneA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PrivateRTZoneA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NATGWZoneA
+
+  NATGWZoneB:
+    DependsOn: VPCGWAttach
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIPZoneB
+        - AllocationId
+      SubnetId:
+        Ref: PublicZoneB
+  EIPZoneB:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  RouteViaNATGWZoneB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PrivateRTZoneB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NATGWZoneB
+
+
+  PublicZoneARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRT
+      SubnetId: !Ref PublicZoneA
+
+  PublicZoneBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRT
+      SubnetId: !Ref PublicZoneB
+
+  EC2ZoneARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRTZoneA
+      SubnetId: !Ref EC2ZoneA
+
+  EC2ZoneBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRTZoneB
+      SubnetId: !Ref EC2ZoneB
+
+
+Outputs:
+  StackName:
+    Value:
+      !Ref AWS::StackName
+  AZs:
+    Value:
+      Fn::Join:
+        - ""
+        - !GetAZs ""
+  VpcId:
+    Value:
+      !Ref Vpc
+    Description: The VPC ID of the created VPC  
+    Export:
+      Name: 
+        "Fn::Sub": 
+          - ${StackName}-VpcId
+          - StackName: !Ref AWS::StackName
+
+  PublicZoneA:
+    Value:
+      !Ref PublicZoneA
+    Description: Public Zone A
+    Export:
+      Name: 
+        "Fn::Sub": 
+          - ${StackName}-PublicZoneA
+          - StackName: !Ref AWS::StackName
+  PublicZoneB:
+    Value:
+      !Ref PublicZoneB
+    Description: Public Zone B
+    Export:
+      Name: 
+        "Fn::Sub": 
+          - ${StackName}-PublicZoneB
+          - StackName: !Ref AWS::StackName
+
+  EC2ZoneA:
+    Value:
+      !Ref EC2ZoneA
+    Description: EC2 Zone A
+    Export:
+      Name: 
+        "Fn::Sub": 
+          - ${StackName}-EC2ZoneA
+          - StackName: !Ref AWS::StackName
+  EC2ZoneB:
+    Value:
+      !Ref EC2ZoneB
+    Description: EC2 Zone B
+    Export:
+      Name: 
+        "Fn::Sub": 
+          - ${StackName}-EC2ZoneB
+          - StackName: !Ref AWS::StackName
+

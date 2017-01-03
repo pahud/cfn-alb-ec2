@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  generic cloudformation main template
+
+Parameters:
+  SshKeyName:
+    Type: String
+    Description: Optional - Name of an existing EC2 KeyPair to enable SSH access to the ECS instances. Set to 'NoValue' if no SSH key is required.
+    Default: NoValue  
+
+Resources:
+  InfraVpc:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3-ap-northeast-1.amazonaws.com/pahud-cfn-templates/cfn-alb-ec2-vpc.yml
+      TimeoutInMinutes: 60 
+
+  InfraEc2Elb:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3-ap-northeast-1.amazonaws.com/pahud-cfn-templates/cfn-alb-ec2-ec2elb.yml
+      TimeoutInMinutes: 60  
+      Parameters:
+        "SshKeyName" : !Ref SshKeyName
+        "VpcStackName" : !GetAtt ["InfraVpc", "Outputs.StackName"]  
+
+Outputs:
+  LoadBalancerURL:
+    Value: {"Fn::GetAtt": ["InfraEc2Elb", "Outputs.LoadBalancerURL"] }   
